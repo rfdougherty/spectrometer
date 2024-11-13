@@ -86,11 +86,18 @@ The device provides a web interface accessible via its IP address. Available end
 
 ### TODO
 
+- Improve performance by removing delayMicros in clock logic. The C12880 supports being clocked at up to 5MHz, but we are maxing out at less than 0.5MHz due to the use of delayMicros, which has a theoretical minimum delay of 1us, but in practice is about 1.5us. Options for removing this limit include:
+  - use a peripheral that can generate the pulses, like the [RMT](http://esp32.io/viewtopic.php?t=37725)
+  - [dedicated GPIO](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-reference/peripherals/dedic_gpio.html)
+  - [GPTimer](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/gptimer.html); [Arduino API](https://docs.espressif.com/projects/arduino-esp32/en/latest/api/timer.html)
+  
+  Of these, the first is likely to be the most performant and should be able to easily hit 5MHz with minimal CPU cycles. But the GPTimer approach is probably the easilest to implement.
 - Add an API endpoint to set and store calibration coefficients
 - Add an automatic integration time selection algorithm
 - Add a web GUI
 - Design a better enclosure
 
+### Info
 - Version: 0.3
 - Author: Bob Dougherty
 - Repository: https://github.com/rfdougherty
