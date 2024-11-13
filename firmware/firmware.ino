@@ -25,6 +25,9 @@
 #define STAT_LED LED_BUILTIN // LED_BUILTIN is 21 on xiao s3, 13 on tft, and 47 on s3 mini
 #define LED_ON HIGH // On most boards this is LOW
 
+// Use pins < 32 so we can use a fast digital write
+// GPIO.out_w1ts = ((uint32_t)1 << _CLK_pin);
+// GPIO.out_w1tc = ((uint32_t)1 << _CLK_pin);
 #define SPEC_TRG 12 // 5
 #define SPEC_ST  13 // 6
 #define SPEC_CLK 16 // 9
@@ -58,7 +61,6 @@ char g_buf[SPEC_CHANNELS * 6 + 100];
 
 WebServer server(80);
 
-//MCP3201 adc;  //  use HW SPI (cs pin is set in begin)
 AHTxx aht10(AHTXX_ADDRESS_X38, AHT1x_SENSOR); //sensor address, sensor type
 C12880_Class spec(SPEC_TRG, SPEC_ST, SPEC_CLK, SPEC_VIDEO);
 
@@ -66,15 +68,6 @@ void setup(){
   Serial.begin(115200); // Baud Rate set to 115200
   delay(100);
   Serial << F("Booting ") << VERSION_STRING << "\n";
-
-  // Configure spectrometer 
-  //pinMode(SPEC_CLK, OUTPUT);
-  //pinMode(SPEC_ST, OUTPUT);
-  //digitalWrite(SPEC_CLK, HIGH); // Set SPEC_CLK High
-  //digitalWrite(SPEC_ST, LOW); // Set SPEC_ST Low
-  //adcAttachPin(SPEC_VIDEO);
-  //analogSetClockDiv(1);
-  spec.begin();
 
   startWifi();
   Serial.println("Configuring time...");
@@ -93,6 +86,9 @@ void setup(){
     Serial << F("AHT10 sensor initialized; temp=") << g_temperature << F("C, hum=") << g_humidity << "%\n";
   }
 
+  Serial << F("Beginning spectrometer");
+  spec.begin();
+  Serial << F("; minimum integration time: ") << spec.get_min_iteg_us() << " microseconds.\n";
   for (int i=0; i<SPEC_CHANNELS; i++){
     g_nm_lut[i] = getWavelength(i);
   }
@@ -105,23 +101,29 @@ void loop(){
   ArduinoOTA.handle();
   server.handleClient();
   //updateTime(); // only need to do this when we use the time
+  if (Serial.available() > 0) {
+    // read the incoming byte:
+    char cmd = Serial.read();
+    switch(cmd) {
+      case 's':
+        readSpecToGbuf(1000);
+        Serial << g_buf << "\n";
+        break;
+      case 'c':
+        readSpecToGbuf(100);
+        Serial << g_buf << "\n";
+        break;
+      case '\n':
+        break;
+      default:
+        Serial << F("Unknown command '") << cmd << F("'.\n");
+    }
+
+    server.send(200, "application/json", g_buf);
+  }
   heartbeat('b');
   yield();
 }
-
-// The following is not needed for the esp32-s3, as it has a much better adc
-// double adcFix(uint16_t reading){
-//   // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
-//   if(reading < 1 || reading > 4095) return 0;
-//   // return -0.000000000009824 * pow(reading,3) + 0.000000016557283 * pow(reading,2) 
-//   //+ 0.000854596860691 * reading + 0.065440348345433;
-//   return (-0.000000000000016 * pow(reading,4) 
-//          +0.000000000118171 * pow(reading,3)
-//          -0.000000301211691 * pow(reading,2)
-//          +0.001109019271794 * reading 
-//          +0.034143524634089);
-// }
-
 
 double getWavelength(uint16_t pixnum) {
   // Convert pixel number to wavelength using the 5th order polynomial calibration function
@@ -147,7 +149,7 @@ void heartbeat(char color) {
 
   if(led_on){
     if(cur_millis - prev_blink_millis > on_ms){
-      neopixelWrite(RGB_BUILTIN, 0, 0, 0);
+      rgbLedWrite(RGB_BUILTIN, 0, 0, 0);
       led_on = false;
       prev_blink_millis = cur_millis;
     }
@@ -155,13 +157,13 @@ void heartbeat(char color) {
     if(cur_millis - prev_millis > flash_interval){
       switch(color){
         case 'g':
-          neopixelWrite(RGB_BUILTIN, 0, bright, 0);
+          rgbLedWrite(RGB_BUILTIN, 0, bright, 0);
           break;
         case 'b':
-          neopixelWrite(RGB_BUILTIN, 0, 0, bright);
+          rgbLedWrite(RGB_BUILTIN, 0, 0, bright);
           break;
         default:
-          neopixelWrite(RGB_BUILTIN, bright, 0, 0);
+          rgbLedWrite(RGB_BUILTIN, bright, 0, 0);
       }
       
       led_on = true;

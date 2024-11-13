@@ -14,6 +14,12 @@
 
 #define PULSE_US 1 
 
+#define ADC_CONVERSION_TIMEOUT_USEC C12880_NUM_CHANNELS*PULSE_US*3
+#define ADC_CLOCK_FREQ 83000 // 611 - 83333
+#define ADC_READ_TIMEOUT_MSEC 1
+#define ADC_NUM_READS_TO_AVERAGE 1
+
+
 /*******************************************************************************
   C12880_Class
 
@@ -54,13 +60,17 @@ public:
               );
   //Configuration methods
   void begin();
-  void set_integration_time(uint32_t usec);
-  //Functionality methods
-  void read_into(uint16_t *buffer);
+  void set_integration_time(uint32_t usec) {
+    _integ_time = usec;
+  }
   uint32_t get_timing(uint8_t index){
     if(index>4) return 0;
     return _timings[index];
   }
+  uint32_t get_min_iteg_us() {
+    return _min_integ_micros;
+  }
+  void read_into(uint16_t *buffer);
 private:
   //helper methods
   inline void _pulse_clock(uint16_t cycles);

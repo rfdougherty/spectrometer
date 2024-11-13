@@ -6,12 +6,26 @@
   https://github.com/groupgets/c12880ma/blob/master/arduino_c12880ma_example/arduino_c12880ma_example.ino
 
   modified by Bob Dougherty (https://github.com/rfdougherty) 2024.05.04
+
+  The C12880 can do a 5MHz clock. The code below drives it at 500kHz (1us pulse). To hit 5MHz, 
+  the clock pulse will need to be 10x shorter (100 nanoseconds). Using a timer we 
+  should be able to run it at 5MHz.
+
+  the fast analog read can do about 100ks/sec, which implies that a read takes 10us.
+
+  TODO: investigate using dedicated gpio bundles, or a peripheral like rmt or i2s?
+  https://esp32.com/viewtopic.php?t=27963
+
  */
 #include <elapsedMillis.h>
 #include "c12880.h"
-#include "analog.h"
- 
-#define CLOCK_FREQUENCY 50000
+#include <hal/gpio_ll.h>
+
+// Continuous ADC reads
+volatile bool g_isr_adc_done = false;
+void ARDUINO_ISR_ATTR adcComplete() {
+  g_isr_adc_done = true;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -35,9 +49,14 @@ C12880_Class::C12880_Class(const uint8_t TRG_pin,
 
 inline void C12880_Class::_pulse_clock(uint16_t cycles){
   for(uint16_t i = 0; i < cycles; i++){
-    digitalWrite(_CLK_pin, HIGH);
+    // Faster digital write ~ 50ns / write vs. 82ns using digitlWrite. 
+    // https://www.reddit.com/r/esp32/comments/f529hf/results_comparing_the_speeds_of_different_gpio/
+    // minimum integration time is reduced from ~235us to 179us 
+    //digitalWrite(_CLK_pin, HIGH);
+    GPIO.out_w1ts = ((uint32_t)1 << _CLK_pin);
     delayMicroseconds(PULSE_US);
-    digitalWrite(_CLK_pin, LOW);
+    //digitalWrite(_CLK_pin, LOW);
+    GPIO.out_w1tc = ((uint32_t)1 << _CLK_pin);
     delayMicroseconds(PULSE_US);
   }
 }
@@ -45,27 +64,28 @@ inline void C12880_Class::_pulse_clock(uint16_t cycles){
 inline void C12880_Class::_pulse_clock_timed(uint32_t duration_micros){
   elapsedMicros sinceStart_micros = 0;
   while (sinceStart_micros < duration_micros){
-    digitalWrite(_CLK_pin, HIGH);
+    GPIO.out_w1ts = ((uint32_t)1 << _CLK_pin);
     delayMicroseconds(PULSE_US);
-    digitalWrite(_CLK_pin, LOW);
+    GPIO.out_w1tc = ((uint32_t)1 << _CLK_pin);
     delayMicroseconds(PULSE_US);
   }
 }
 
 void C12880_Class::begin() {
+  // Initialize ADC for fast reading on the video pin.
+  analogContinuousSetWidth(12); // S3 should support 13 bits, but runtime error says only option is 12
+  analogContinuousSetAtten(ADC_11db); // for the S3, this is 0 mV ~ 3100 mV
+  // array of pins, pin count, # of conversions per pin per cycle to average, sample frequency, callback function
+  uint8_t adc_pins[] = {_VIDEO_pin};
+  analogContinuous(adc_pins, 1, ADC_NUM_READS_TO_AVERAGE, ADC_CLOCK_FREQ, &adcComplete);
   //analogReadResolution(12);
-  // Initialize ADC for reading really fast on the video pin.
-  // NOTE that regular AnalogRead must NOT be used beyond this point
-  // NOTE that pin 5 is on channel 4 and pin 6 is on channel 5
-  // channel = pin-1 (adc channel 0 is on pin 1, ... channel 19 is on pin 20)
-  fadcInit(1, _VIDEO_pin);
+  //analogSetAttenuation(ADC_11db);
 
-  //Set desired pins to OUTPUT
   pinMode(_CLK_pin, OUTPUT);
   pinMode(_ST_pin, OUTPUT);
   
-  digitalWrite(_CLK_pin, LOW); // Start with CLK High
-  digitalWrite(_ST_pin, LOW);  // Start with ST Low
+  digitalWrite(_CLK_pin, LOW);
+  digitalWrite(_ST_pin, LOW);
   
   _measure_min_integ_micros();
 }
@@ -77,40 +97,63 @@ void C12880_Class::_measure_min_integ_micros() {
   _min_integ_micros = sinceStart_micros;
 }
 
-void C12880_Class::set_integration_time(uint32_t usec) {
-  _integ_time = usec;
-}
-
-
 void C12880_Class::read_into(uint16_t *buffer) {
   // compute integration time with timing correction in _min_integ_micros
   uint32_t duration_micros = _integ_time - min(_integ_time, _min_integ_micros);
+
   // Start clock cycle and set start pulse to signal start
   uint32_t start_micros = micros();
-  digitalWrite(_CLK_pin, HIGH);
+  GPIO.out_w1ts = ((uint32_t)1 << _CLK_pin); // CLK HIGH
   delayMicroseconds(PULSE_US);
-  digitalWrite(_CLK_pin, LOW);
-  digitalWrite(_ST_pin, HIGH);
+  GPIO.out_w1tc = ((uint32_t)1 << _CLK_pin); // CLK LOW
+  GPIO.out_w1ts = ((uint32_t)1 << _ST_pin); // ST HIGH
   delayMicroseconds(PULSE_US);
-  // pixel integration starts after three clock pulses
+
+  // pixel integration starts three clock pulses after ST goes high
   _pulse_clock(3);
   _timings[0] = micros() - start_micros;
+
   // Integrate pixels for a while
   _pulse_clock_timed(duration_micros);
-  // Set _ST_pin to low
-  digitalWrite(_ST_pin, LOW);
+
+  // Now bring ST LOW-- the beginning of the end of integration
+  GPIO.out_w1tc = ((uint32_t)1 << _ST_pin); 
   _timings[1] = micros() - start_micros;
-  // Sample for a period of time; integration stops at pulse 48th pulse after ST went low
+
+  // integration stops on the 48th pulse after ST went low
   _pulse_clock(48);
   _timings[2] = micros() - start_micros;
-  // pixel output is ready after last pulse #88 after ST wen low
-  _pulse_clock(40);
+
+  // pixel output is ready after 40 more pulses (a total of 88 pulses after ST went low)
+  _pulse_clock(40); // 48 + 40 = 88
   _timings[3] = micros() - start_micros;
-  //Read from SPEC_VIDEO
-  for(uint16_t i=0; i<C12880_NUM_CHANNELS; i++){
-    buffer[i] = analogReadMilliVoltsFast(_VIDEO_chan);
+
+  // Read from SPEC_VIDEO
+  // continuous adc mode is over 2x faster than one-shot reads (5500us vs. 11000us)
+  adc_continuous_data_t *result = NULL;
+  analogContinuousStart();
+  for(uint16_t i=0; i<C12880_NUM_CHANNELS; i++) {
+    while (!g_isr_adc_done) {
+      if (micros() - _timings[3] > ADC_CONVERSION_TIMEOUT_USEC) {
+        buffer[i] = 9998;
+        break;
+      }
+    }
+    g_isr_adc_done = false;
+    if (analogContinuousRead(&result, ADC_READ_TIMEOUT_MSEC)) {
+      buffer[i] = result[0].avg_read_mvolts;
+    } else {
+      //Serial.println("Error reading ADC. Set Core Debug Level to error or lower for more info.");
+      buffer[i] = 9999; // we can check this to see if we had any errors
+      // TODO: log errors
+    }
     _pulse_clock(1);
   }
+  analogContinuousStop();
+  // for(uint16_t i=0; i<C12880_NUM_CHANNELS; i++) {
+  //   buffer[i] = analogReadMilliVolts(_VIDEO_pin);
+  //   _pulse_clock(1);
+  // }
   _timings[4] = micros() - start_micros;
 }
 

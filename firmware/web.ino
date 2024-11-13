@@ -34,28 +34,8 @@ void setupRouting() {
 
   server.on(UriBraces("/spectrum/{}"), []() {
     // takes required integration time (in microsec)
-    char buf[30];
     uint32_t integration_time = constrain(server.pathArg(0).toInt(), 1, 1000000);
-    spec.set_integration_time(integration_time);
-    snprintf(g_buf, sizeof(g_buf), "{\"ts\":%f,\"integration\":%d,\"readtimes\":[", 
-             getEpochFloat(), integration_time);
-    spec.read_into(g_spec_data);
-    // to read the timing data
-    for(int i=0; i<4; i++){
-      snprintf(buf, sizeof(buf), "%d,", spec.get_timing(i));
-      strlcat(g_buf, buf, sizeof(g_buf));
-    }
-    snprintf(buf, sizeof(buf), "%d],\"spec\":[", spec.get_timing(4));
-    strlcat(g_buf, buf, sizeof(g_buf));
-
-    //strcat(g_buf, ",\"spec\":[");
-    for (int i=0; i<SPEC_CHANNELS-1; i++) {
-      snprintf(buf, sizeof(buf), "%d,", g_spec_data[i]);
-      strlcat(g_buf, buf, sizeof(g_buf));
-    }
-    snprintf(buf, sizeof(buf), "%d]}", g_spec_data[SPEC_CHANNELS-1]);
-    strlcat(g_buf, buf, sizeof(g_buf));
-
+    readSpecToGbuf(integration_time);
     server.send(200, "application/json", g_buf);
   });
 
@@ -133,4 +113,29 @@ static int64_t getEpochUs() {
   struct timeval tv;
   gettimeofday(&tv, NULL);
   return (int64_t)tv.tv_usec + tv.tv_sec * 1000000ll;
+}
+
+void readSpecToGbuf(uint32_t integration_time) {
+  /*
+  Read spectrometer data into global g_buf as a json string. E.g.:
+    {"ts":1234,"integration":100,"readtimes":[0,1,2,3],"spec":[10,20,30,...]}
+  */
+  char buf[30];
+  spec.set_integration_time(integration_time);
+  snprintf(g_buf, sizeof(g_buf), "{\"ts\":%f,\"integration\":%d,\"readtimes\":[", 
+            getEpochFloat(), integration_time);
+  spec.read_into(g_spec_data);
+  // to read the timing data
+  for(int i=0; i<4; i++){
+    snprintf(buf, sizeof(buf), "%d,", spec.get_timing(i));
+    strlcat(g_buf, buf, sizeof(g_buf));
+  }
+  snprintf(buf, sizeof(buf), "%d],\"spec\":[", spec.get_timing(4));
+  strlcat(g_buf, buf, sizeof(g_buf));
+  for (int i=0; i<SPEC_CHANNELS-1; i++) {
+    snprintf(buf, sizeof(buf), "%d,", g_spec_data[i]);
+    strlcat(g_buf, buf, sizeof(g_buf));
+  }
+  snprintf(buf, sizeof(buf), "%d]}", g_spec_data[SPEC_CHANNELS-1]);
+  strlcat(g_buf, buf, sizeof(g_buf));
 }

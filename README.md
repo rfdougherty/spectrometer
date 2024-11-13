@@ -24,9 +24,9 @@ A spectrometer's integration time is the length of time it takes to collect phot
 
 ## Hardware
 
-- **Microcontroller**: ESP32-S3 (recommended: [LOLIN S3 mini](https://www.wemos.cc/en/latest/s3/s3_mini.html) with 4MB flash, 2MB PSRAM)
-- **Spectrometer**: Hamamatsu C12880MA
-- **Temperature Sensor**: AHT10/AHT20 (e.g., [this module](https://www.amazon.com/gp/product/B092495GZJ))
+- **Microcontroller**: ESP32-S3 (e.g., [LOLIN S3 mini](https://www.wemos.cc/en/latest/s3/s3_mini.html))
+- **Spectrometer**: [Hamamatsu C12880MA](https://www.hamamatsu.com/us/en/product/optical-sensors/spectrometers/mini-spectrometer/C12880MA.html)
+- **Temperature/Humidity Sensor**: AHT10/AHT20 (e.g., [this module](https://www.amazon.com/gp/product/B092495GZJ))
 - **Connections**:
   - SPEC_TRG (output): GPIO 12 (requires voltage divider)
   - SPEC_ST (input): GPIO 13 (direct connection)
@@ -35,7 +35,7 @@ A spectrometer's integration time is the length of time it takes to collect phot
   - SPEC_VIDEO (output): GPIO 10 (requires voltage divider; see note below)
   - I2C: SDA (GPIO 35), SCL (GPIO 36) (direct connection to the AHT10)
 
-  You can buy a C12880 module and breakout board from [GroupGets](https://groupgets.com/products/hamamatsu-c12880ma-breakout-board). Their board offers level shifters and a buffer for the analog output of the spectrometer. However, the C12880 inputs can be driven directly from the microcontroller as they are rated for a 3V HIGH threshold. You do need to level-shift the digital outputs from the C12880 to avoid damaging the microcontroller. However, this can be easily achived with a simple 2-resistor voltage divider (I used a [1K/2K divider](https://randomnerdtutorials.com/how-to-level-shift-5v-to-3-3v/)). The S3 analog input is high impedance and does not need a buffer (but *does* need a divider; see notes below). Given this, I picked up a C12880 (with calibration certificate) from ebay for under $200 and built a simple breakout board with spare parts. (A schematic and pcd files for the breakout are coming soon!)
+  You can buy a C12880 module and breakout board from [GroupGets](https://groupgets.com/products/hamamatsu-c12880ma-breakout-board). Their board offers level shifters and a buffer for the analog output of the spectrometer. However, the C12880 inputs can be driven directly from the microcontroller as they are rated for a 3V HIGH threshold. You do need to level-shift the digital outputs from the C12880 to avoid damaging the microcontroller. However, this can be easily achived with a simple 2-resistor [voltage divider]](https://randomnerdtutorials.com/how-to-level-shift-5v-to-3-3v/) (I used a 5K/10K pair). The S3 analog input is high impedance and does not need a buffer (but *does* need a divider; see notes below). Given this, I picked up a C12880 (with calibration certificate) from ebay for under $200 and built a simple breakout board with spare parts. (A schematic and pcd files for the breakout are coming soon!)
 
 ### Analog notes
 The ESP32 had [notoriously bad](https://www.reddit.com/r/esp32/comments/1dgjxtm/honest_question_why_is_the_adc_so_bad_non_rant/) ADC performance, but the ESP32-S3 has a much improved ADC. I did some preliminary tests using an external [12-bit SPI ADC](https://www.microchip.com/en-us/product/mcp3204), an [op-amp buffer](https://www.ti.com/lit/ds/symlink/opa344.pdf?ts=1731079872575), and a simple voltage divider to read the C12880 analog output but the results were actually *more* noisy than using the S3's ADC with no buffer and just a 2-resistor divider. Take this external ADC test with a grain of salt, as this was done on a breadboard, so it's quite possible that a well-designed PCB could yield better results with an external ADC. But for my purposes, the simplest solution was good enough to achieve very stable spectrometer readings. Also note that unlike the divider for the digital pins, I paid careful attention to the exact resistance values to achive a full-range ADC input of [0-3.1V](https://docs.espressif.com/projects/esp-idf/en/v4.4.3/esp32s3/api-reference/peripherals/adc.html) and measured a bunch of individual resistors to pick a pair that got me closest to <= 3.1V (e.g., a 2K that measures a bit high and a 3.3K that measures a bit low). Adding a small (0.1nF) filter capacitor helped with stability.
@@ -86,7 +86,6 @@ The device provides a web interface accessible via its IP address. Available end
 
 ### TODO
 
-- Update fast analog read code to work with ESP-Arduino 3.x
 - Add an API endpoint to set and store calibration coefficients
 - Add an automatic integration time selection algorithm
 - Add a web GUI
