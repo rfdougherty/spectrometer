@@ -42,8 +42,6 @@ The ESP32 had [notoriously bad](https://www.reddit.com/r/esp32/comments/1dgjxtm/
 
 ## Firmware
 
-To achieve fast calibrated millivolt ADC reads, I used the [ESP32-S3-FastAnalogRead](https://github.com/stg/ESP32-S3-FastAnalogRead) library (code is included in this repo for convenience). Note that this library is not yet updated for ESP-Arduino 3.x. If you get compile errors related to adc functions, try downgrading to ESP-Arduino 2.x. Or better yet, update the code and do a pull request!
-
 Note that the C12880 wavelenths are individually calibrated and thus you should receive a calibration certificate with your spectrometer. You must update the coefficients in [getWavelength](firmware/firmware.ino) with the values from your calibration certificate to get accurate data.
 
 The web API returns json payloads. To keep things simple and fast, I used snprintf to build the JSON payload strings. This works well for now, but will not be the easiest to maintain if the API is expanded. In that case, this code should be refactored to use a proper JSON library like [ArduinoJson](https://arduinojson.org/).
@@ -51,7 +49,6 @@ The web API returns json payloads. To keep things simple and fast, I used snprin
 The firmware code uses the following Arduino libraries:
 - [Streaming](https://github.com/janelia-arduino/Streaming)
 - [AHTxx](https://github.com/m5stack/AHTxx)
-- [ESP32-S3-FastAnalogRead](https://github.com/stg/ESP32-S3-FastAnalogRead) (included in this repo)
 - Custom C12880 library (included in this repo)
 
 ## Software
