@@ -5,6 +5,13 @@
  * Ideal board is an esp32-S3 as it has an improved ADC. I used a LOLIN S3 mini (4MB flash, 2MB PSRAM).
  * board def: ~/Library/Arduino15/packages/esp32/hardware/esp32/2.0.11/variants/lolin_s3_mini/pins_arduino.h
  * Note: to get serial output, enable "USB CDC On Boot" in the tools menu.
+ *
+ * API:
+ *   /wavelength
+ *   /spectrum/[int_time]
+ *   /rmtfreq/[rmt_freq]
+ *   /temperature
+ *   /i2c
  * 
  * Bob Dougherty (https://github.com/rfdougherty) 2024.05.04
  *
@@ -86,9 +93,9 @@ void setup(){
     Serial << F("AHT10 sensor initialized; temp=") << g_temperature << F("C, hum=") << g_humidity << "%\n";
   }
 
-  Serial << F("Beginning spectrometer");
+  Serial.println(F("Beginning spectrometer"));
   spec.begin();
-  Serial << F("; minimum integration time: ") << spec.get_min_iteg_us() << " microseconds.\n";
+  Serial << F("Minimum integration time: ") << spec.get_min_iteg_us() << F(" microseconds.\n");
   for (int i=0; i<SPEC_CHANNELS; i++){
     g_nm_lut[i] = getWavelength(i);
   }
@@ -98,28 +105,41 @@ void setup(){
 
 void loop(){
   static uint32_t last_update = 0;
+  uint32_t ticks;
   ArduinoOTA.handle();
   server.handleClient();
   //updateTime(); // only need to do this when we use the time
   if (Serial.available() > 0) {
-    // read the incoming byte:
     char cmd = Serial.read();
     switch(cmd) {
+      // for quick testing at a few different integration times and pulse rates
       case 's':
-        readSpecToGbuf(1000);
-        Serial << g_buf << "\n";
-        break;
-      case 'c':
         readSpecToGbuf(100);
-        Serial << g_buf << "\n";
+        Serial << g_buf << F("\n");
+        break;
+      case 'm':
+        readSpecToGbuf(1000);
+        Serial << g_buf << F("\n");
+        break;
+      case 'l':
+        readSpecToGbuf(10000);
+        Serial << g_buf << F("\n");
+        break;
+      case 'f':
+        ticks = spec.set_pulse_rate(5000000);
+        Serial << F("Pulse rate set to 5000000, ticks=") << ticks << F(", min_integration=") << spec.get_min_iteg_us() 
+               << F("ns, CPU freq=") << getCpuFrequencyMhz() << F("MHz\n");
+        break;
+      case 't':
+        ticks = spec.set_pulse_rate(500000);
+        Serial << F("Pulse rate set to 500000, ticks=") << ticks << F(", min_integration=") << spec.get_min_iteg_us() 
+               << F("ns, CPU freq=") << getCpuFrequencyMhz() << F("MHz\n");
         break;
       case '\n':
         break;
       default:
         Serial << F("Unknown command '") << cmd << F("'.\n");
     }
-
-    server.send(200, "application/json", g_buf);
   }
   heartbeat('b');
   yield();
