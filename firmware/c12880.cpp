@@ -43,7 +43,6 @@ C12880_Class::C12880_Class(const uint8_t TRG_pin,
   _ST_pin  = ST_pin;
   _CLK_pin = CLK_pin;
   _VIDEO_pin = VIDEO_pin;
-  _clock_delay_micros = 1; // half of a clock period
   _min_integ_micros = 0;   // this is correction which is platform dependent and should be measured in `begin`
   set_integration_time(1000);  // integration time default to 1ms
 }
@@ -74,18 +73,18 @@ inline void C12880_Class::_pulse_clock_timed(uint32_t duration_micros){
   }
 }
 
-  uint32_t C12880_Class::set_pulse_rate(uint32_t pulse_rate){
-    // To achieve sub-microsecond delays we use the cpu clock. This sets the number of ticks we want for each pulse.
-    // The pulse_rate is specified in Hz.
-    _cpu_freq = getCpuFrequencyMhz();
-    // pulse rate is half the scale factor. E.g., with a scale of 5, pulse rate is 2.5MHz
-    _pulse_ticks = _cpu_freq / (pulse_rate / 500000);
-    // measure minimum integration time; 48 clock cycles are required after ST goes low
-    elapsedMicros sinceStart_micros = 0;
-    _pulse_clock(48);
-    _min_integ_micros = sinceStart_micros;
-    return _pulse_ticks;
-  }
+uint32_t C12880_Class::set_pulse_rate(uint32_t pulse_rate){
+  // To achieve sub-microsecond delays we use the cpu clock. This sets the number of ticks we want for each pulse.
+  // The pulse_rate is specified in Hz.
+  _cpu_freq = getCpuFrequencyMhz();
+  // pulse rate is half the scale factor. E.g., with a scale of 5, pulse rate is 2.5MHz
+  _pulse_ticks = _cpu_freq / (pulse_rate / 500000);
+  // measure minimum integration time; 48 clock cycles are required after ST goes low
+  elapsedMicros sinceStart_micros = 0;
+  _pulse_clock(48);
+  _min_integ_micros = sinceStart_micros;
+  return _pulse_ticks;
+}
 
 void C12880_Class::begin() {
   // Initialize ADC for reading on the video pin.
@@ -126,6 +125,7 @@ void C12880_Class::read_into(uint16_t *buffer) {
   // integration stops on the 48th pulse after ST went low
   _pulse_clock(48);
   _timings[2] = micros() - start_micros;
+
   // pixel output is ready after 40 more pulses (a total of 88 pulses after ST went low)
   _pulse_clock(40); // 48 + 40 = 88
 
