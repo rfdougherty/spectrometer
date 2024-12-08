@@ -34,8 +34,21 @@ void setupRouting() {
 
   server.on(UriBraces("/spectrum/{}"), []() {
     // takes required integration time (in microsec)
-    uint32_t integration_time = constrain(server.pathArg(0).toInt(), 1, 1000000);
+    uint32_t integration_time = constrain(server.pathArg(0).toInt(), spec.get_min_iteg_us(), 1000000);
     readSpecToGbuf(integration_time);
+    server.send(200, "application/json", g_buf);
+  });
+
+  server.on(UriBraces("/pulserate/{}"), []() {
+    // set the pulse rate, in hz
+    uint32_t pulse_rate = constrain(server.pathArg(0).toInt(), 100000, 10000000);
+    uint32_t ticks = spec.set_pulse_rate(pulse_rate);
+    snprintf(g_buf, sizeof(g_buf), "{\"cpu_freq_mhz\":%d,\"pulse_ticks\":%d}", getCpuFrequencyMhz(), ticks);
+    server.send(200, "application/json", g_buf);
+  });
+
+  server.on("/minimum_integration_time", []() {
+    snprintf(g_buf, sizeof(g_buf), "{\"min_integ_ns\":%d}", spec.get_min_iteg_us());
     server.send(200, "application/json", g_buf);
   });
 

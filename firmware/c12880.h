@@ -12,45 +12,6 @@
 
 #define C12880_NUM_CHANNELS 288
 
-#define PULSE_US 1 
-
-#define ADC_CONVERSION_TIMEOUT_USEC C12880_NUM_CHANNELS*PULSE_US*3
-#define ADC_CLOCK_FREQ 83000 // 611 - 83333
-#define ADC_READ_TIMEOUT_MSEC 1
-#define ADC_NUM_READS_TO_AVERAGE 1
-
-
-/*******************************************************************************
-  C12880_Class
-
-#include "c12880.h"
-
-#define SPEC_TRG         A0
-#define SPEC_ST          A1
-#define SPEC_CLK         10
-#define SPEC_VIDEO       A3
-
-uint16_t g_spec_data[C12880_NUM_CHANNELS];
-C12880_Class spec(SPEC_TRG,SPEC_ST,SPEC_CLK,SPEC_VIDEO);
-
-float g_integration_time = 0.01;
-void setup(){
-  spec.begin();
-}
-
-void loop(){
-  spec.set_integration_time(g_integration_time);
-  spec.read_into(g_spec_data);
-  // to read the timing data
-  for(int i=0; i<9; i++){
-    Serial << spec.get_timing(i) << ",";
-  }
-  Serial << spec.get_timing(9) << "\n";
-
-}
-
-  
-*******************************************************************************/
 class C12880_Class{
 public:
   C12880_Class(const uint8_t TRG_pin,
@@ -58,33 +19,33 @@ public:
                const uint8_t CLK_pin,
                const uint8_t VIDEO_pin
               );
-  //Configuration methods
   void begin();
   void set_integration_time(uint32_t usec) {
     _integ_time = usec;
   }
-  uint32_t get_timing(uint8_t index){
+  uint32_t get_timing(uint8_t index) {
     if(index>4) return 0;
     return _timings[index];
   }
   uint32_t get_min_iteg_us() {
     return _min_integ_micros;
   }
+  uint32_t set_pulse_rate(uint32_t pulse_rate);
   void read_into(uint16_t *buffer);
 private:
   //helper methods
-  inline void _pulse_clock(uint16_t cycles);
+  inline uint32_t _pulse_clock(uint32_t cycles);
   inline void _pulse_clock_timed(uint32_t duration_micros);
-  void _measure_min_integ_micros();
   //Attributes
   uint8_t _TRG_pin;
   uint8_t _ST_pin;
   uint8_t _CLK_pin;
   uint8_t _VIDEO_pin;
-  uint8_t _VIDEO_chan;
   uint32_t _clock_delay_micros;
   uint32_t _integ_time;
   uint32_t _min_integ_micros;
+  uint32_t _cpu_freq;
+  uint32_t _pulse_ticks;
   uint32_t _timings[5];
 };
 

@@ -51,18 +51,15 @@ The firmware code uses the following Arduino libraries:
 - [AHTxx](https://github.com/m5stack/AHTxx)
 - Custom C12880 library (included in this repo)
 
-## Software
+### C12880 clock pulses
+The code uses simple bit-banging to drive the C12880 which imposes some limits on how fast it can run and thus the minimum integration time that can be achieved. I did explore other options and implemented one (RMT; see notes below) but found that given the somehat involved C12880 requirement that the clock pin, read start pin, and analog video out pin need to be coordinated the RMT would not be a good solution. So to make the bit-banging fast, I use [direct register settings](https://www.reddit.com/r/esp32/comments/f529hf/results_comparing_the_speeds_of_different_gpio/) to save the digitalWrite overhead. I also implemented a sub-microsecond delay function that counts CPU clock ticks. The latter was critical for getting fast reads (and thus short integration times) as delayMicros has a theoretical minimum delay of 1 microsecond, but in practice averages about 2-3 microseconds due to rounding and overhead.
+
+### ADC Reads
+I originally used [ESP32-S3-FastAnalogRead](https://github.com/stg/ESP32-S3-FastAnalogRead) to speed up single-shot analog reads, but that package is out of date and throws runtime errors when compiled with ESP-IDF 5 (aka Arduino in ESP-Arduino 3.x). Also, the new IDF has improved the analogRead functions and thus closed the gap with hand-optizied code. I did explore using continuous ADC reads and found that to be about 2x faster than single-shot reads, but I couldn't be confident that the readings were perfectly synchronized with each C12880 pixel and it may have been off by one or two pixels, so I reverted to using a simple sing-shot ADC read approach. This results in about a 10 millisecond readout time. However, unlike the clok pulses, this does not affect the minimum integration time and merely adds an extra 5ms delay between measurements, which seems worth the tradeoff for more reliable readings.
+
+## Examples
 
 See the [Jupyter](https://jupyter.org/) notebook in [examples](examples) for a simple example of how to read spectrum data from the spectrometer using python code.
-
-## Installation
-
-1. Install the Arduino IDE
-2. Add ESP32 board support to Arduino IDE
-3. Install required libraries through the Arduino Library Manager
-4. Select "LOLIN S3 mini" as the board
-5. Enable "USB CDC On Boot" in Tools menu
-6. Upload the firmware
 
 ## Configuration
 
@@ -76,6 +73,7 @@ The device uses WiFiManager for initial WiFi setup:
 The device provides a web interface accessible via its IP address. Available endpoints:
 - `/wavelength`: Get the calibrated wavelengths.
 - `/spectrum/{integration_time}`: Acquire spectral data for a given integration time. (see python code for more details)
+- `/pulserate/{pulse_rate}`: Set the spectrometer clock pulse rate, in Hz. Should be in the rante 100000 - 5000000.
 - `/temperature`: Get the temperature and humidity.
 - `/i2c`: Scan I2C bus for connected devices (useful for debugging I2C issues)
 
@@ -84,11 +82,16 @@ The device provides a web interface accessible via its IP address. Available end
 ### TODO
 
 - Improve performance by removing delayMicros in clock logic. The C12880 supports being clocked at up to 5MHz, but we are maxing out at less than 0.5MHz due to the use of delayMicros, which has a theoretical minimum delay of 1us, but in practice is about 1.5us. Options for removing this limit include:
-  - use a peripheral that can generate the pulses, like the [RMT](http://esp32.io/viewtopic.php?t=37725)
+  - ~~use a peripheral that can generate the pulses, like the RMT~~
   - [dedicated GPIO](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-reference/peripherals/dedic_gpio.html)
-  - [GPTimer](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/gptimer.html); [Arduino API](https://docs.espressif.com/projects/arduino-esp32/en/latest/api/timer.html)
+  - implement a sub-microsecond delay 
   
-  Of these, the first is likely to be the most performant and should be able to easily hit 5MHz with minimal CPU cycles. But the GPTimer approach is probably the easilest to implement.
+  Of these, the first is likely to be the most performant and should be able to easily hit 5MHz with minimal CPU cycles. But the last option is the easilest to implement.
+
+  UPDATE: I tried using RMT and found it didn't help speed things up much despite adding lots of complexity. 
+  The main reason that it didn't help much is due to the fact that we need to bit-bang the clock pin for the ADC
+  readout and switching the pin from RMT mode to digitalWrite mode was taking several hundrend microseconds.
+
 - Add an API endpoint to set and store calibration coefficients
 - Add an automatic integration time selection algorithm
 - Add a web GUI
